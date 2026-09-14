@@ -35,8 +35,19 @@ class HealthSyncWorker(
         }
 
         return try {
-            val steps = healthConnectManager.readDailySteps()
-            val activeMinutes = healthConnectManager.readDailyActiveMinutes()
+            val stepsResult = healthConnectManager.readDailySteps()
+            val activeMinutesResult = healthConnectManager.readDailyActiveMinutes()
+
+            if (stepsResult.isFailure && activeMinutesResult.isFailure) {
+                Log.w(
+                    TAG,
+                    "Both steps and active minutes failed to read in background: stepsErr=${stepsResult.exceptionOrNull()?.message}, activeErr=${activeMinutesResult.exceptionOrNull()?.message}"
+                )
+                return Result.retry()
+            }
+
+            val steps = stepsResult.getOrNull()
+            val activeMinutes = activeMinutesResult.getOrNull()
             Log.d(TAG, "Fetched Health Connect data: steps=$steps, activeMinutes=$activeMinutes")
 
             val db = AppDatabase.getInstance(applicationContext)

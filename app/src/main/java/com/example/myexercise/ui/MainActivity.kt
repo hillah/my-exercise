@@ -65,4 +65,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        if (healthConnectManager.isAvailable()) {
+            viewModel.syncHealthConnect(quietly = true)
+        }
+    }
 }

@@ -32,6 +32,7 @@ class MainViewModel(
             repository.ensureDefaultTypes()
             checkHealthConnectStatus()
             refreshStreak()
+            syncHealthConnect(quietly = true)
         }
 
         // Collect Exercise Types
@@ -89,27 +90,44 @@ class MainViewModel(
         }
     }
 
-    fun syncHealthConnect() {
+    fun syncHealthConnect(quietly: Boolean = false) {
         viewModelScope.launch {
             if (!healthConnectManager.isAvailable()) {
-                _uiState.update { it.copy(snackBarMessage = "ヘルスコネクトが利用できません") }
+                if (!quietly) _uiState.update { it.copy(snackBarMessage = "ヘルスコネクトが利用できません") }
                 return@launch
             }
             if (!healthConnectManager.hasAllPermissions()) {
-                _uiState.update { it.copy(snackBarMessage = "ヘルスコネクトの読み取り権限が必要です") }
+                if (!quietly) _uiState.update { it.copy(snackBarMessage = "ヘルスコネクトの読み取り権限が必要です") }
                 return@launch
             }
 
             try {
-                val steps = healthConnectManager.readDailySteps()
-                val activeMinutes = healthConnectManager.readDailyActiveMinutes()
+                val stepsResult = healthConnectManager.readDailySteps()
+                val activeMinutesResult = healthConnectManager.readDailyActiveMinutes()
+
+                if (stepsResult.isFailure && activeMinutesResult.isFailure) {
+                    val errorMsg = stepsResult.exceptionOrNull()?.localizedMessage ?: "データ取得エラー"
+                    if (!quietly) {
+                        _uiState.update { it.copy(snackBarMessage = "ヘルスコネクト同期失敗: $errorMsg") }
+                    }
+                    return@launch
+                }
+
+                val steps = stepsResult.getOrNull()
+                val activeMinutes = activeMinutesResult.getOrNull()
                 repository.updateHealthData(steps, activeMinutes)
-                _uiState.update {
-                    it.copy(snackBarMessage = "Garmin / ヘルスコネクトデータを同期しました（${steps}歩）")
+
+                val displaySteps = steps ?: _uiState.value.todaySummary?.stepCount ?: 0
+                if (!quietly) {
+                    _uiState.update {
+                        it.copy(snackBarMessage = "Garmin / ヘルスコネクトデータを同期しました（${displaySteps}歩）")
+                    }
                 }
                 refreshStreak()
             } catch (e: Exception) {
-                _uiState.update { it.copy(snackBarMessage = "同期に失敗しました: ${e.localizedMessage}") }
+                if (!quietly) {
+                    _uiState.update { it.copy(snackBarMessage = "同期に失敗しました: ${e.localizedMessage}") }
+                }
             }
         }
     }

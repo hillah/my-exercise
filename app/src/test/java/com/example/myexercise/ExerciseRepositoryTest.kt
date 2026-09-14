@@ -77,9 +77,41 @@ class ExerciseRepositoryTest {
         assertEquals(0, streak)
     }
 
+    @Test
+    fun testUpdateHealthDataPreservesExistingStepsWhenSyncReturnsZeroOrNull() = runTest {
+        val today = LocalDate.now().format(dateFormatter)
+        val initialSummary = DailySummaryEntity(
+            date = today,
+            stepCount = 8500,
+            activeMinutes = 40,
+            workoutCount = 10,
+            isGoalMet = true,
+            achievementLevel = 2
+        )
+        val fakeDao = FakeExerciseDao(listOf(initialSummary))
+        val repository = ExerciseRepository(fakeDao)
+
+        // Attempt sync with 0 steps (e.g. error or sensor lag)
+        repository.updateHealthData(steps = 0, activeMinutes = 0, date = today)
+        assertEquals(8500, fakeDao.getDailySummary(today)?.stepCount)
+        assertEquals(40, fakeDao.getDailySummary(today)?.activeMinutes)
+
+        // Attempt sync with null steps
+        repository.updateHealthData(steps = null, activeMinutes = null, date = today)
+        assertEquals(8500, fakeDao.getDailySummary(today)?.stepCount)
+        assertEquals(40, fakeDao.getDailySummary(today)?.activeMinutes)
+
+        // Legitimate increase to 9200 steps
+        repository.updateHealthData(steps = 9200, activeMinutes = 45, date = today)
+        assertEquals(9200, fakeDao.getDailySummary(today)?.stepCount)
+        assertEquals(45, fakeDao.getDailySummary(today)?.activeMinutes)
+    }
+
     private class FakeExerciseDao(
-        private val summaries: List<DailySummaryEntity>
+        initialSummaries: List<DailySummaryEntity>
     ) : ExerciseDao {
+        private val summaryMap = initialSummaries.associateBy { it.date }.toMutableMap()
+
         override fun getAllExerciseTypes(): Flow<List<ExerciseTypeEntity>> = flowOf(emptyList())
         override suspend fun getExerciseTypesList(): List<ExerciseTypeEntity> = emptyList()
         override suspend fun getExerciseTypeById(id: Long): ExerciseTypeEntity? = null
@@ -91,11 +123,13 @@ class ExerciseRepositoryTest {
         override suspend fun getTotalWorkoutRepsByDate(date: String): Int? = null
         override suspend fun getTotalStretchSecondsByDate(date: String): Int? = null
         override suspend fun deleteLogById(logId: Long) {}
-        override suspend fun getDailySummary(date: String): DailySummaryEntity? = summaries.find { it.date == date }
-        override fun getDailySummaryFlow(date: String): Flow<DailySummaryEntity?> = flowOf(summaries.find { it.date == date })
-        override fun getSummariesInRangeFlow(startDate: String, endDate: String): Flow<List<DailySummaryEntity>> = flowOf(summaries)
-        override suspend fun getRecentSummaries(endDate: String, limit: Int): List<DailySummaryEntity> = summaries
-        override suspend fun upsertDailySummary(summary: DailySummaryEntity) {}
+        override suspend fun getDailySummary(date: String): DailySummaryEntity? = summaryMap[date]
+        override fun getDailySummaryFlow(date: String): Flow<DailySummaryEntity?> = flowOf(summaryMap[date])
+        override fun getSummariesInRangeFlow(startDate: String, endDate: String): Flow<List<DailySummaryEntity>> = flowOf(summaryMap.values.toList())
+        override suspend fun getRecentSummaries(endDate: String, limit: Int): List<DailySummaryEntity> = summaryMap.values.toList()
+        override suspend fun upsertDailySummary(summary: DailySummaryEntity) {
+            summaryMap[summary.date] = summary
+        }
         override suspend fun deleteExerciseTypeById(id: Long) {}
     }
 }

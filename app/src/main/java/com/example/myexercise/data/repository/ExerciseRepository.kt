@@ -69,25 +69,41 @@ class ExerciseRepository(
         )
     }
 
-    suspend fun updateHealthData(steps: Int, activeMinutes: Int, date: String = getTodayString()) = withContext(Dispatchers.IO) {
+    suspend fun updateHealthData(
+        steps: Int?,
+        activeMinutes: Int?,
+        date: String = getTodayString()
+    ) = withContext(Dispatchers.IO) {
         val existing = exerciseDao.getDailySummary(date) ?: DailySummaryEntity(date = date)
         val totalReps = exerciseDao.getTotalWorkoutRepsByDate(date) ?: 0
         val totalStretchSecs = exerciseDao.getTotalStretchSecondsByDate(date) ?: 0
 
+        // 同一日内で歩数や運動時間が0や減少に誤って上書きされるのを防ぐ
+        val finalSteps = when {
+            steps != null && steps > 0 -> maxOf(steps, existing.stepCount)
+            steps != null && steps == 0 -> if (existing.stepCount > 0) existing.stepCount else 0
+            else -> existing.stepCount
+        }
+        val finalActiveMinutes = when {
+            activeMinutes != null && activeMinutes > 0 -> maxOf(activeMinutes, existing.activeMinutes)
+            activeMinutes != null && activeMinutes == 0 -> if (existing.activeMinutes > 0) existing.activeMinutes else 0
+            else -> existing.activeMinutes
+        }
+
         val hasExercise = totalReps > 0 || totalStretchSecs >= 30
-        val isGoalMet = hasExercise || steps >= 5000 || activeMinutes >= 15
+        val isGoalMet = hasExercise || finalSteps >= 5000 || finalActiveMinutes >= 15
         val level = when {
-            steps >= 15000 || (totalReps >= 50 && steps >= 8000) -> 4
-            steps >= 10000 || (totalReps >= 30 && steps >= 5000) -> 3
-            isGoalMet && (totalReps >= 20 || totalStretchSecs >= 60 || steps >= 5000) -> 2
+            finalSteps >= 15000 || (totalReps >= 50 && finalSteps >= 8000) -> 4
+            finalSteps >= 10000 || (totalReps >= 30 && finalSteps >= 5000) -> 3
+            isGoalMet && (totalReps >= 20 || totalStretchSecs >= 60 || finalSteps >= 5000) -> 2
             isGoalMet -> 1
             else -> 0
         }
 
         exerciseDao.upsertDailySummary(
             existing.copy(
-                stepCount = steps,
-                activeMinutes = activeMinutes,
+                stepCount = finalSteps,
+                activeMinutes = finalActiveMinutes,
                 workoutCount = totalReps,
                 stretchSeconds = totalStretchSecs,
                 isGoalMet = isGoalMet,

@@ -84,9 +84,11 @@ class HealthConnectManager(private val context: Context) {
         }
     }
 
-    suspend fun readDailySteps(date: LocalDate = LocalDate.now()): Int {
-        val client = healthConnectClient ?: return 0
-        return try {
+    suspend fun readDailySteps(date: LocalDate = LocalDate.now()): Result<Int> = withContext(Dispatchers.IO) {
+        val client = healthConnectClient ?: return@withContext Result.failure(
+            IllegalStateException("Health Connect is not available")
+        )
+        try {
             val startTime = date.atStartOfDay(ZoneId.systemDefault()).toInstant()
             val endTime = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()
 
@@ -96,15 +98,19 @@ class HealthConnectManager(private val context: Context) {
                     timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
                 )
             )
-            response[StepsRecord.COUNT_TOTAL]?.toInt() ?: 0
+            val steps = response[StepsRecord.COUNT_TOTAL]?.toInt() ?: 0
+            Result.success(steps)
         } catch (e: Exception) {
-            0
+            android.util.Log.e("HealthConnectManager", "Failed to aggregate daily steps for $date", e)
+            Result.failure(e)
         }
     }
 
-    suspend fun readDailyActiveMinutes(date: LocalDate = LocalDate.now()): Int {
-        val client = healthConnectClient ?: return 0
-        return try {
+    suspend fun readDailyActiveMinutes(date: LocalDate = LocalDate.now()): Result<Int> = withContext(Dispatchers.IO) {
+        val client = healthConnectClient ?: return@withContext Result.failure(
+            IllegalStateException("Health Connect is not available")
+        )
+        try {
             val startTime = date.atStartOfDay(ZoneId.systemDefault()).toInstant()
             val endTime = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()
 
@@ -115,9 +121,11 @@ class HealthConnectManager(private val context: Context) {
                 )
             )
             val duration = response[ExerciseSessionRecord.EXERCISE_DURATION_TOTAL]
-            duration?.toMinutes()?.toInt() ?: 0
+            val minutes = duration?.toMinutes()?.toInt() ?: 0
+            Result.success(minutes)
         } catch (e: Exception) {
-            0
+            android.util.Log.e("HealthConnectManager", "Failed to aggregate active minutes for $date", e)
+            Result.failure(e)
         }
     }
 }
