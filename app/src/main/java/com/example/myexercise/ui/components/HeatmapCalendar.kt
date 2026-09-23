@@ -77,10 +77,10 @@ fun HeatmapCalendar(
         scrollState.scrollTo(scrollState.maxValue)
     }
 
-    // Determine starting Monday for the 16-week window
-    // Start with the Monday of (weeksCount - 1) weeks ago
-    val startMonday = remember(today) {
-        today.minusWeeks((weeksCount - 1).toLong()).with(DayOfWeek.MONDAY)
+    // Determine starting Sunday for the 16-week window (Sunday-start)
+    val startSunday = remember(today) {
+        val currentWeekSunday = today.minusDays((today.dayOfWeek.value % 7).toLong())
+        currentWeekSunday.minusWeeks((weeksCount - 1).toLong())
     }
 
     Card(
@@ -118,16 +118,18 @@ fun HeatmapCalendar(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
-                // Day of week labels (Mon, Wed, Fri)
+                // Day of week labels (Sunday..Saturday with English Mon, Wed, Fri)
                 Column(
                     modifier = Modifier.padding(end = 6.dp, top = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val days = listOf("月", "", "水", "", "金", "", "")
+                    val days = listOf("", "Mon", "", "Wed", "", "Fri", "")
                     days.forEach { dayText ->
                         Box(
-                            modifier = Modifier.size(15.dp),
-                            contentAlignment = Alignment.Center
+                            modifier = Modifier
+                                .height(15.dp)
+                                .width(28.dp),
+                            contentAlignment = Alignment.CenterEnd
                         ) {
                             if (dayText.isNotEmpty()) {
                                 Text(
@@ -153,7 +155,7 @@ fun HeatmapCalendar(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             for (dayIndex in 0..6) {
-                                val cellDate = startMonday.plusWeeks(weekIndex.toLong()).plusDays(dayIndex.toLong())
+                                val cellDate = startSunday.plusWeeks(weekIndex.toLong()).plusDays(dayIndex.toLong())
                                 val cellDateStr = cellDate.format(dateFormatter)
                                 val isFuture = cellDate.isAfter(today)
                                 val isToday = cellDate == today
