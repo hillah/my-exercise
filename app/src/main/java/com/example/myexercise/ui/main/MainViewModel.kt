@@ -90,7 +90,7 @@ class MainViewModel(
         }
     }
 
-    fun syncHealthConnect(quietly: Boolean = false) {
+    fun syncHealthConnect(quietly: Boolean = false, days: Int = 3) {
         viewModelScope.launch {
             if (!healthConnectManager.isAvailable()) {
                 if (!quietly) _uiState.update { it.copy(snackBarMessage = "ヘルスコネクトが利用できません") }
@@ -102,28 +102,20 @@ class MainViewModel(
             }
 
             try {
-                val stepsResult = healthConnectManager.readDailySteps()
-                val activeMinutesResult = healthConnectManager.readDailyActiveMinutes()
-
-                if (stepsResult.isFailure && activeMinutesResult.isFailure) {
-                    val errorMsg = stepsResult.exceptionOrNull()?.localizedMessage ?: "データ取得エラー"
+                val result = repository.syncRecentHealthData(healthConnectManager, days = days)
+                result.onSuccess { todaySteps ->
+                    val displaySteps = if (todaySteps > 0) todaySteps else _uiState.value.todaySummary?.stepCount ?: 0
                     if (!quietly) {
-                        _uiState.update { it.copy(snackBarMessage = "ヘルスコネクト同期失敗: $errorMsg") }
+                        _uiState.update {
+                            it.copy(snackBarMessage = "直近${days}日分のGarmin / ヘルスコネクトデータを同期しました（本日: ${displaySteps}歩）")
+                        }
                     }
-                    return@launch
-                }
-
-                val steps = stepsResult.getOrNull()
-                val activeMinutes = activeMinutesResult.getOrNull()
-                repository.updateHealthData(steps, activeMinutes)
-
-                val displaySteps = steps ?: _uiState.value.todaySummary?.stepCount ?: 0
-                if (!quietly) {
-                    _uiState.update {
-                        it.copy(snackBarMessage = "Garmin / ヘルスコネクトデータを同期しました（${displaySteps}歩）")
+                    refreshStreak()
+                }.onFailure { error ->
+                    if (!quietly) {
+                        _uiState.update { it.copy(snackBarMessage = "同期に失敗しました: ${error.localizedMessage}") }
                     }
                 }
-                refreshStreak()
             } catch (e: Exception) {
                 if (!quietly) {
                     _uiState.update { it.copy(snackBarMessage = "同期に失敗しました: ${e.localizedMessage}") }

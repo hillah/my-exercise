@@ -1,5 +1,6 @@
 package com.example.myexercise.data.repository
 
+import com.example.myexercise.data.health.HealthConnectManager
 import com.example.myexercise.data.local.ExerciseDao
 import com.example.myexercise.data.local.AppDatabase
 import com.example.myexercise.data.local.entity.DailySummaryEntity
@@ -111,6 +112,51 @@ class ExerciseRepository(
                 updatedAt = System.currentTimeMillis()
             )
         )
+    }
+
+    /**
+     * 直近N日間（デフォルト3日間：本日・昨日・一昨日）のヘルスデータをまとめて取得・更新する。
+     * Garmin等の同期遅延による過去日データも確実に反映する。
+     */
+    suspend fun syncRecentHealthData(
+        healthConnectManager: HealthConnectManager,
+        days: Int = 3
+    ): Result<Int> = withContext(Dispatchers.IO) {
+        var todaySteps = 0
+        var anySuccess = false
+        var lastError: Throwable? = null
+
+        for (i in 0 until days) {
+            val targetDate = LocalDate.now().minusDays(i.toLong())
+            val targetDateStr = targetDate.format(dateFormatter)
+
+            val stepsResult = healthConnectManager.readDailySteps(targetDate)
+            val activeMinutesResult = healthConnectManager.readDailyActiveMinutes(targetDate)
+
+            if (stepsResult.isSuccess || activeMinutesResult.isSuccess) {
+                anySuccess = true
+                val steps = stepsResult.getOrNull()
+                val activeMinutes = activeMinutesResult.getOrNull()
+
+                if (i == 0 && steps != null) {
+                    todaySteps = steps
+                }
+
+                updateHealthData(
+                    steps = steps,
+                    activeMinutes = activeMinutes,
+                    date = targetDateStr
+                )
+            } else {
+                lastError = stepsResult.exceptionOrNull() ?: activeMinutesResult.exceptionOrNull()
+            }
+        }
+
+        if (anySuccess) {
+            Result.success(todaySteps)
+        } else {
+            Result.failure(lastError ?: IllegalStateException("Failed to sync health data"))
+        }
     }
 
     /**

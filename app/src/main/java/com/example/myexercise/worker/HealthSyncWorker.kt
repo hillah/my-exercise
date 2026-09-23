@@ -35,26 +35,19 @@ class HealthSyncWorker(
         }
 
         return try {
-            val stepsResult = healthConnectManager.readDailySteps()
-            val activeMinutesResult = healthConnectManager.readDailyActiveMinutes()
+            val db = AppDatabase.getInstance(applicationContext)
+            val repository = ExerciseRepository(db.exerciseDao())
 
-            if (stepsResult.isFailure && activeMinutesResult.isFailure) {
+            val syncResult = repository.syncRecentHealthData(healthConnectManager, days = 3)
+            if (syncResult.isFailure) {
                 Log.w(
                     TAG,
-                    "Both steps and active minutes failed to read in background: stepsErr=${stepsResult.exceptionOrNull()?.message}, activeErr=${activeMinutesResult.exceptionOrNull()?.message}"
+                    "Health sync for recent 3 days failed in background: ${syncResult.exceptionOrNull()?.message}"
                 )
                 return Result.retry()
             }
 
-            val steps = stepsResult.getOrNull()
-            val activeMinutes = activeMinutesResult.getOrNull()
-            Log.d(TAG, "Fetched Health Connect data: steps=$steps, activeMinutes=$activeMinutes")
-
-            val db = AppDatabase.getInstance(applicationContext)
-            val repository = ExerciseRepository(db.exerciseDao())
-            repository.updateHealthData(steps = steps, activeMinutes = activeMinutes)
-
-            Log.d(TAG, "Successfully updated DailySummary from background sync.")
+            Log.d(TAG, "Successfully updated DailySummary for recent 3 days from background sync.")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "Error during HealthSyncWorker execution", e)

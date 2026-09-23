@@ -107,6 +107,37 @@ class ExerciseRepositoryTest {
         assertEquals(45, fakeDao.getDailySummary(today)?.activeMinutes)
     }
 
+    @Test
+    fun testPastDateHealthDataUpdateRestoresStreak() = runTest {
+        val today = LocalDate.now()
+        val todayStr = today.format(dateFormatter)
+        val yesterdayStr = today.minusDays(1).format(dateFormatter)
+        val twoDaysAgoStr = today.minusDays(2).format(dateFormatter)
+
+        // Initial state: Two days ago was completed, but yesterday was NOT completed (e.g. Garmin sync delay)
+        val initialSummaries = listOf(
+            DailySummaryEntity(date = twoDaysAgoStr, isGoalMet = true, workoutCount = 20),
+            DailySummaryEntity(date = yesterdayStr, isGoalMet = false, stepCount = 0),
+            DailySummaryEntity(date = todayStr, isGoalMet = true, workoutCount = 10)
+        )
+        val fakeDao = FakeExerciseDao(initialSummaries)
+        val repository = ExerciseRepository(fakeDao)
+
+        // Without yesterday, streak is only today (1 day)
+        assertEquals(1, repository.calculateCurrentStreak())
+
+        // Now Garmin syncs delayed data for yesterday (6,500 steps)
+        repository.updateHealthData(steps = 6500, activeMinutes = 30, date = yesterdayStr)
+
+        val updatedYesterday = fakeDao.getDailySummary(yesterdayStr)
+        assertEquals(6500, updatedYesterday?.stepCount)
+        assertEquals(true, updatedYesterday?.isGoalMet)
+
+        // Streak is now connected across 3 consecutive days!
+        val updatedStreak = repository.calculateCurrentStreak()
+        assertEquals(3, updatedStreak)
+    }
+
     private class FakeExerciseDao(
         initialSummaries: List<DailySummaryEntity>
     ) : ExerciseDao {
